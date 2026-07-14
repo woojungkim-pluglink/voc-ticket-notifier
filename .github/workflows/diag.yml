@@ -1,0 +1,24 @@
+name: diag
+on:
+  workflow_dispatch: {}
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: probe pluglink api
+        run: |
+          echo "== runner public IP =="
+          curl -s https://api.ipify.org || true; echo
+          echo "== DNS =="
+          getent hosts apis.pluglink.kr || true
+          echo "== GET base v101 =="
+          curl -s -o /dev/null -w "HTTP %{http_code}\n" https://apis.pluglink.kr/v101/ || true
+          echo "== POST signIn (dummy creds) =="
+          curl -s -w "\nHTTP %{http_code}\n" -X POST \
+            https://apis.pluglink.kr/v101/auths/admins/signIn \
+            -H "Content-Type: application/json" \
+            -H "x-token: 1" -H "x-channel: PLUGLINK" -H "x-platform: WEB" \
+            -H "Origin: https://connect.pluglink.kr" \
+            -d '{"email":"x@y.z","password":"dummy","authType":"ORGANIC","partnerId":1}' \
+            | head -c 600
+          echo
