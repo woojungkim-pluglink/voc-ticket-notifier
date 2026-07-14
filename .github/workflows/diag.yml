@@ -4,21 +4,22 @@ on:
 jobs:
   diag:
     runs-on: ubuntu-latest
+    env:
+      E: ${{ secrets.PLUGLINK_EMAIL }}
+      P: ${{ secrets.PLUGLINK_PASSWORD }}
     steps:
-      - name: probe pluglink api
+      - name: probe signin with real secrets
         run: |
-          echo "== runner public IP =="
-          curl -s https://api.ipify.org || true; echo
-          echo "== DNS =="
-          getent hosts apis.pluglink.kr || true
-          echo "== GET base v101 =="
-          curl -s -o /dev/null -w "HTTP %{http_code}\n" https://apis.pluglink.kr/v101/ || true
-          echo "== POST signIn (dummy creds) =="
+          # 값 자체는 출력하지 않고 길이만 — 공백/개행 혼입·빈값 탐지용.
+          # 기대: 이메일 23자(woojung.kim@pluglink.kr), 비번 10자(Rla910406!)
+          echo "email length = ${#E}"
+          echo "password length = ${#P}"
+          echo "== POST signIn (실제 Secret) =="
           curl -s -w "\nHTTP %{http_code}\n" -X POST \
             https://apis.pluglink.kr/v101/auths/admins/signIn \
             -H "Content-Type: application/json" \
             -H "x-token: 1" -H "x-channel: PLUGLINK" -H "x-platform: WEB" \
             -H "Origin: https://connect.pluglink.kr" \
-            -d '{"email":"x@y.z","password":"dummy","authType":"ORGANIC","partnerId":1}' \
-            | head -c 600
+            -d "$(printf '{"email":"%s","password":"%s","authType":"ORGANIC","partnerId":1}' "$E" "$P")" \
+            | head -c 800
           echo
