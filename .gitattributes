@@ -1,0 +1,4 @@
+# 텍스트 파일은 저장소에서 LF로 정규화 (ubuntu 러너에서 bash \r 문제 방지)
+* text=auto eol=lf
+# VBS는 UTF-16 BOM — 건드리지 않도록 binary 처리
+*.vbs binary

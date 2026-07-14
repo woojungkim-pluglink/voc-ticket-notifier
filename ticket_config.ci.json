@@ -1,0 +1,15 @@
+{
+  "_comment": "GitHub Actions 전용 비-시크릿 설정. pluglink_password/slack_bot_token은 절대 여기 넣지 말 것 — Actions Secrets(env)로 주입됨. 이 파일은 반드시 private 저장소에만.",
+  "slack_channel": "#s3-사업개발-voc-tickets",
+  "slack_channel_id": "C0ATSNLKAFM",
+  "slack_member_ids": {
+    "엔젤": "U023W7NM555",
+    "마크": "U03AX12CBBL",
+    "우성": "U08UDBS8XU5",
+    "쿠이": "U044H0NU5EH",
+    "엘리": "U068NUEFA11",
+    "케이시": "U082PBRF7MW",
+    "윤택": "U09D9766GBZ",
+    "체셔": "U0ADB06V0S2"
+  }
+}

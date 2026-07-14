@@ -1,0 +1,109 @@
+name: voc-tickets
+
+# VOC 티켓 알림 — GitHub Actions 이전판.
+# 개인 PC(Task Scheduler/WSL) SPOF를 제거하고 상시가동 인프라에서 구동한다.
+# 스케줄은 UTC 기준(GitHub Actions). KST = UTC+9.
+on:
+  schedule:
+    # notify: KST 평일 09:00~17:50, 10분 간격 (= UTC 00:00~08:50).
+    # Actions 스케줄은 지터/드롭이 있어 5분 정밀도를 보장하지 못하므로 10분 주기로 완화.
+    - cron: '*/10 0-8 * * 1-5'
+    # summary: KST 평일 09:00 (= UTC 00:00).
+    - cron: '0 0 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: '실행 모드'
+        type: choice
+        options: [notify, summary]
+        default: notify
+      dry_run:
+        description: '드라이런(Slack 미발송·상태 미변경)'
+        type: boolean
+        default: false
+
+# notify와 summary(그리고 겹치는 00:00 UTC 실행)가 같은 상태를 동시에 건드리지 않도록 직렬화.
+# 과거 로컬 판의 09:00 notify·summary 경합(중복 발송)을 구조적으로 제거.
+concurrency:
+  group: voc-ticket-state
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+        # 의존성 없음 — 표준 라이브러리(urllib)만 사용하므로 pip install 불필요.
+
+      - name: CI용 설정 배치 (비-시크릿 채널·멤버 매핑)
+        run: cp ticket_config.ci.json ticket_config.json
+
+      # 스냅샷 상태를 캐시로 영속(러너는 stateless). 롤링 캐시 패턴:
+      # 항상 최신(voc-state-*)을 복원하고, 실행 후 run_id 키로 새 캐시를 저장.
+      - name: Restore state
+        uses: actions/cache/restore@v4
+        with:
+          path: ticket_state.json
+          key: voc-state-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            voc-state-
+
+      - name: Run notifier
+        id: run
+        env:
+          # 시크릿은 GitHub Actions Secrets에서만 주입 (코드는 env 폴백으로 읽음).
+          PLUGLINK_EMAIL: ${{ secrets.PLUGLINK_EMAIL }}
+          PLUGLINK_PASSWORD: ${{ secrets.PLUGLINK_PASSWORD }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        run: |
+          set -euo pipefail
+          # 어떤 cron이 트리거했는지로 모드 결정. 수동 실행 시엔 입력값 사용.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            MODE="${{ github.event.inputs.mode }}"
+            DRY="${{ github.event.inputs.dry_run }}"
+          elif [ "${{ github.event.schedule }}" = "0 0 * * 1-5" ]; then
+            MODE="summary"
+            DRY="false"
+          else
+            MODE="notify"
+            DRY="false"
+          fi
+          echo "mode=$MODE dry_run=$DRY"
+          if [ "$DRY" = "true" ]; then
+            python3 ticket_notifier.py "$MODE" --dry-run
+          else
+            python3 ticket_notifier.py "$MODE"
+          fi
+
+      - name: Save state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ticket_state.json
+          key: voc-state-${{ github.run_id }}-${{ github.run_attempt }}
+
+      # C1(자기감시): 실행 실패 시 조용히 죽지 않고 Slack으로 경보.
+      # VOC_ALERT_TARGET = 경보 받을 채널ID 또는 사용자ID(DM). 미설정 시 이 스텝은 스킵.
+      - name: 실패 경보 (Slack)
+        if: failure()
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          ALERT: ${{ secrets.VOC_ALERT_TARGET }}
+        run: |
+          if [ -z "${ALERT:-}" ]; then
+            echo "VOC_ALERT_TARGET 미설정 — 실패 경보 스킵"
+            exit 0
+          fi
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          curl -s -X POST https://slack.com/api/chat.postMessage \
+            -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+            -H "Content-type: application/json; charset=utf-8" \
+            --data "$(printf '{"channel":"%s","text":":rotating_light: VOC 티켓 알림 실행 실패\n%s"}' "$ALERT" "$RUN_URL")" \
+            > /dev/null

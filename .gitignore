@@ -1,0 +1,11 @@
+# 시크릿·상태·로그는 절대 커밋/공유하지 않는다
+ticket_config.json
+ticket_state.json
+*.log
+
+# 파이썬 캐시
+__pycache__/
+*.pyc
+
+# 배포·공유 대상은 코드 + *.example.json 뿐
+!ticket_config.example.json
