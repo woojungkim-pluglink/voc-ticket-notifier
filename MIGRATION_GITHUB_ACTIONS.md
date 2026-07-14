@@ -2,6 +2,10 @@
 
 로컬 개인 PC(Task Scheduler → WSL) 방식을 GitHub Actions cron으로 이전한다. `charge-test-autofill`과 동일한 조직 패턴을 따른다.
 
+> **배포 완료 (2026-07-14)**: `woojungkim-pluglink/voc-ticket-notifier`(Private)에 배포·가동 중. 로컬 Task 2개(`Pluglink_VOC_Notify`/`Summary`)는 비활성화(이중 발송 방지). 검증: 러너에서 로그인 성공, 캐시 save/restore 양방향 확인, dry-run·실행 정상.
+>
+> **배포 중 교훈**: `gh secret set`에 값을 붙여넣을 때 개행/공백이 섞이면 `PLUGLINK_EMAIL`이 "이메일이 존재하지 않습니다"(404)로 실패한다. `-b`(PowerShell) 또는 `printf '%s' | gh secret set`(bash)로 개행 없이 설정할 것.
+
 ## 이 이전으로 해결되는 것 (AUDIT 대비)
 
 | 검수 항목 | 로컬 방식 | GitHub Actions |
