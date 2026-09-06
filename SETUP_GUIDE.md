@@ -116,8 +116,8 @@ wsl -- bash -c "python3 --version"
 PowerShell에서 다음을 실행하면 두 파일이 정확한 인코딩으로 만들어집니다. `<경로>`는 실제 폴더로 치환:
 
 ```powershell
-$BASE = "<경로>"   # 예: C:\Users\user\Documents\claude code\VOC티켓전달
-$WSL_PATH = "/mnt/c/Users/user/Documents/claude code/VOC티켓전달"  # 실제 팀 경로로
+$BASE = "<경로>"   # 예: C:\Users\user\Documents\claude\03_운영데이터\VOC-티켓전달
+$WSL_PATH = "/mnt/c/Users/user/Documents/claude/03_운영데이터/VOC-티켓전달"  # 실제 팀 경로로
 
 $notify = @"
 Set sh = CreateObject("WScript.Shell")

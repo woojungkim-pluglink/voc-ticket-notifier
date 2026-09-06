@@ -43,7 +43,7 @@
 
 ### 2. **비공개(Private) GitHub 저장소 생성 후 코드 푸시**
 ```bash
-cd "C:/Users/user/Documents/claude code/VOC티켓전달"
+cd "C:/Users/user/Documents/claude/03_운영데이터/VOC-티켓전달"
 git init
 git add ticket_notifier.py ticket_config.ci.json ticket_config.example.json .gitignore .github SETUP_GUIDE.md AUDIT.md MIGRATION_GITHUB_ACTIONS.md plan.md
 git status   # ⚠️ 커밋 전 반드시 확인: ticket_config.json / ticket_state.json / *.log 이 목록에 없어야 함
