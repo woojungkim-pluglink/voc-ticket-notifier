@@ -1,0 +1,117 @@
+{
+  "name": "VOC 티켓 알림 트리거 (GitHub Actions dispatch)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "*/10 9-17 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "b1a00001-0000-4000-8000-000000000001",
+      "name": "10분마다 (평일 09-17 KST)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-240, -120]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.github.com/repos/woojungkim-pluglink/voc-ticket-notifier/actions/workflows/voc-tickets.yml/dispatches",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"ref\":\"main\",\"inputs\":{\"mode\":\"notify\",\"dry_run\":\"false\"}}",
+        "options": {}
+      },
+      "id": "b1a00001-0000-4000-8000-000000000002",
+      "name": "dispatch notify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [20, -120]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * 1-5"
+            }
+          ]
+        }
+      },
+      "id": "b1a00001-0000-4000-8000-000000000003",
+      "name": "평일 09:00 (KST)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-240, 120]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.github.com/repos/woojungkim-pluglink/voc-ticket-notifier/actions/workflows/voc-tickets.yml/dispatches",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github+json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"ref\":\"main\",\"inputs\":{\"mode\":\"summary\",\"dry_run\":\"false\"}}",
+        "options": {}
+      },
+      "id": "b1a00001-0000-4000-8000-000000000004",
+      "name": "dispatch summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [20, 120]
+    }
+  ],
+  "connections": {
+    "10분마다 (평일 09-17 KST)": {
+      "main": [
+        [
+          {
+            "node": "dispatch notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "평일 09:00 (KST)": {
+      "main": [
+        [
+          {
+            "node": "dispatch summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {},
+  "active": false
+}
