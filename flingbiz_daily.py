@@ -19,6 +19,12 @@ import sys
 import urllib.request
 from datetime import datetime, timezone, timedelta, date
 
+# Windows에서 stdout이 콘솔이 아니면(파이프·리다이렉트·Claude Code 실행) 로케일 cp949가
+# 적용돼 이모지 출력에서 UnicodeEncodeError로 죽는다. 여기서 UTF-8로 고정한다.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 KST = timezone(timedelta(hours=9))
 API_BASE = "https://apis.pluglink.kr/v101"
@@ -256,6 +262,21 @@ def main():
     if not owners or sum(len(v) for v in owners.values()) == 0:
         print("[ERROR] owners(소유주→충전소) 매핑이 비어 있음 — 오발송 방지로 중단")
         sys.exit(1)
+    # 안전장치 2: ES 쿼리에 실제로 쓴 기준이 config와 다르면 중단
+    qo = data.get("query_owners")
+    if qo is not None and sorted(qo) != sorted(cfg["asset_owners"]):
+        print("[ERROR] ES 조회에 쓴 소유주가 config와 다름 — 게시 중단")
+        print(f"        조회: {sorted(qo)}")
+        print("        config: " + str(sorted(cfg["asset_owners"])))
+        sys.exit(1)
+    qs = data.get("query_completed_statuses")
+    if qs is not None and sorted(qs) != sorted(cfg["completed_statuses"]):
+        print("[ERROR] ES 조회에 쓴 종결상태가 config와 다름 — 게시 중단")
+        print(f"        조회: {sorted(qs)}")
+        sys.exit(1)
+    if qo is None or qs is None:
+        print("[WARN] es_input.json에 query_owners/query_completed_statuses가 없어 기준 대조를 건너뜁니다")
+
     missing = [o for o in cfg["asset_owners"] if o not in owners]
     if missing:
         print(f"[WARN] 설정에 있으나 입력에 없는 소유주: {missing}")
@@ -294,6 +315,11 @@ def main():
         with open(os.path.join(HERE, "flingbiz_runs.jsonl"), "a", encoding="utf-8") as f:
             f.write(json.dumps(log, ensure_ascii=False) + "\n")
     print("\n[결과] " + json.dumps(log, ensure_ascii=False))
+
+    # 게시 실패를 종료코드로 드러낸다 (0으로 끝나면 미게시가 성공으로 기록된다)
+    if not a.dry_run and ts is None:
+        print("[ERROR] Slack 게시 실패 — 감사 로그에 slack_ts:null 기록. 종료코드 2")
+        sys.exit(2)
 
 if __name__ == "__main__":
     main()
