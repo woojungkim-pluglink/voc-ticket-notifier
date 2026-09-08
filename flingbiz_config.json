@@ -1,0 +1,38 @@
+{
+  "_comment": "플링비즈 VOC 일일 요약 설정. 기존 VOC 봇(ticket_config.json/ticket_notifier.py)과 완전히 분리되어 있으며 기존 동작에 영향 없음.",
+  "_owner_note": "자산소유주 목록. 파트너가 늘면 이 배열만 고치면 됩니다(코드 수정 불필요). 충전소 목록은 하드코딩하지 않고 소유주 이름으로 매번 ES 조회합니다.",
+  "asset_owners": [
+    "플러그링크(Biz_P)",
+    "플러그링크(Biz_H)",
+    "한백",
+    "대한송유관공사",
+    "차지네틱스",
+    "스칼라데이터",
+    "타키온네트워크"
+  ],
+  "_excluded_note": "플링비즈가 아니어서 제외(참고용, 코드는 asset_owners만 사용). 딜라이브는 요청 팀이 포함 여부 확인 중이라 1차 제외.",
+  "excluded_owners_reference": [
+    "플러그링크", "플러그링크(HM)", "(유)플러그링크인프라", "경남플러그링크(주)",
+    "플링에너지", "(유)플링그리드", "(주)이브넷", "건물소유주", "딜라이브"
+  ],
+
+  "slack_channel_id": "C0C04H7G4MC",
+  "slack_channel_name": "#플링비즈알람용",
+
+  "_stale_note": "미완료 경과일 기준. 요청 팀 합의: VOC '접수일' 기준, 영업일이 아닌 실제 일자(달력일).",
+  "stale_threshold_days": 7,
+  "stale_basis": "voc_created_at",
+  "stale_day_type": "calendar",
+
+  "_completed_note": "종결로 보는 상태. 실측 status enum: RECEIVED/PROCESSING/MONITORING/COMPLETED/CANCELLED. 초소도 종결로 집계(요청 팀 합의).",
+  "completed_statuses": ["COMPLETED", "CANCELLED", "CLOSED", "DONE", "CANCELED", "FINISH", "FINISHED"],
+
+  "_scope_note": "요청 팀 검증 기준과 동일하게 parentVocId 있는 티켓만 대상.",
+  "require_parent_voc": true,
+
+  "es_indices": {
+    "chargers": "alias_chargers_production",
+    "tickets": "alias_tickets_production"
+  },
+  "_tz_note": "함정: ES의 createdAt/completedAt은 UTC naive 문자열, 커넥트 REST의 createdAt은 KST naive 문자열. 섞으면 9시간 밀림. 스크립트가 정규화함."
+}

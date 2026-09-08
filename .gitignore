@@ -9,3 +9,7 @@ __pycache__/
 
 # 배포·공유 대상은 코드 + *.example.json 뿐
 !ticket_config.example.json
+
+# 플링비즈 일일 현황: 매 실행마다 새로 생성되는 조회결과·감사로그
+es_input.json
+flingbiz_runs.jsonl
