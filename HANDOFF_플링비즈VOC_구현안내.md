@@ -83,7 +83,19 @@ Claude Code 스케줄 작업 (평일 09:00)
 
 ⚠️ **2·3번은 반드시 본인 계정/본인 봇으로 발급하세요.** 제 계정이나 기존 VOC 봇 토큰을 재사용하면 감사 추적이 저와 섞이고, 제가 비밀번호를 바꾸는 순간 조용히 멈춥니다.
 
-> 봇 초대는 잊기 쉬운데, 초대 없이 발송하면 Slack이 `not_in_channel`을 돌려줍니다(HTTP는 200이라 에러처럼 안 보입니다 — §4 ⑥).
+> 봇 초대는 잊기 쉬운데, 초대 없이 발송하면 Slack이 `not_in_channel`을 돌려줍니다(HTTP는 200이라 에러처럼 안 보입니다 — §4 ⑦).
+
+### 2-1. 시작 전 3분 확인 (관문 3개)
+
+문서 자체는 자기완결이지만, **아래 3개는 문서로 해결이 안 되고 계정·권한 문제**입니다. 착수 전에 이것만 확인하면 중간에 막히는 일은 없습니다.
+
+| 확인 | 방법 (각 1분) | 실패 시 |
+|---|---|---|
+| **① ES 커넥터** | Claude Code에서 "`aggregate_documents` 도구 있어?"라고 물어본다. 없으면 `ToolSearch`로 `aggregate_documents,search_documents` 검색 | **이게 유일한 진짜 관문입니다.** 이건 ES API key 발급이 아니라 **Claude 계정에 붙는 조직 커넥터 활성화**라, 개발팀이 난색을 보였던 그 요청과 다릅니다. 제 쪽에도 로컬 자격증명 없이 계정 커넥터로만 붙어 있습니다 — IT/Claude 관리자에게 "이 커넥터를 내 계정에도" 요청하면 됩니다 |
+| **② 커넥트 VOC 조회 권한** | 커넥트 로그인 후 아무 VOC 상세를 열어 본다 | 계정은 있어도 CRM 조회 권한이 없으면 경과일 판정만 빠집니다(미완료 집계는 정상). `voc_lookup_failed`가 전건으로 나오는 증상 |
+| **③ Slack 앱 생성 권한** | 워크스페이스 설정에서 앱 생성이 가능한지 | 워크스페이스가 앱 생성을 관리자 승인으로 막아 둔 경우가 있습니다. 그러면 Slack 관리자에게 봇 생성 또는 기존 앱에 협업자 추가를 요청해야 합니다 |
+
+①이 안 되면 이 방식 자체가 불가하니, **①을 가장 먼저** 확인해 주세요. ②·③은 안 돼도 일부 기능만 빠진 상태로 진행할 수 있습니다.
 
 ---
 
@@ -600,7 +612,7 @@ dry-run은 **발송하지 않고 감사 로그도 남기지 않습니다**. 확�
 
 Claude Code에서 `create_scheduled_task`로 등록합니다. cron은 **로컬 시간대** 기준이라 그대로 `0 9 * * 1-5`.
 
-프롬프트는 **새 세션에서 아무 기억 없이 실행돼도 되게 자기완결적으로** 써야 합니다. 아래를 골격으로 쓰고, §3-2의 쿼리 4건을 프롬프트 안에 그대로 박아 넣으세요.
+프롬프트는 **새 세션에서 아무 기억 없이 실행돼도 되게 자기완결적으로** 써야 합니다. 아래는 제 쪽에서 실제로 돌고 있는 프롬프트를 옮긴 것이라 그대로 써도 됩니다 — `<...>` 표시된 3곳(채널명, 폴더 절대경로 2회)만 채우면 끝입니다.
 
 ```
 플링비즈 VOC 일일 현황을 산출해 Slack <채널명>에 게시한다.
@@ -624,10 +636,46 @@ ES는 계정에 붙은 MCP로 조회한다(aggregate_documents, search_documents
    ES 쿼리의 terms/must_not에는 반드시 이 배열을 넣는다(문서의 예시 값을 그대로 쓰지 말 것).
    실제로 쓴 값을 es_input.json의 query_owners / query_completed_statuses에 기록한다.
    충전소 목록은 하드코딩하지 않는다.
-2~5. (§3-2의 조회 ①②③④를 쿼리째로 여기에 붙여넣기) → es_input.json 작성
-   - 조회 ②는 응답 total과 옮긴 건수를 비교한다.
-   - 직전 구간은 flingbiz_runs.jsonl 마지막 dry_run:false 줄의 asof를 보고,
-     실행이 밀렸으면 구간 시작을 그 날짜로 넓히고 prev_label에 실제 구간을 쓴다.
+2. 소유주 → 충전소 매핑 (aggregate_documents)
+   - index: alias_chargers_production
+   - query: {"terms": {"owner.partnerName": [ ...1단계에서 읽은 asset_owners... ]}}
+   - aggs: {"by_owner": {"terms": {"field": "owner.partnerName", "size": 20},
+            "aggs": {"stations": {"terms": {"field": "station.id", "size": 500}}}}}
+   - size: 0
+   결과의 소유주별 station.id 목록이 대상 충전소 전체다.
+
+3. 미완료 티켓 (search_documents)
+   - index: alias_tickets_production
+   - size: 500
+   - query: {"bool": {
+       "filter": [
+         {"exists": {"field": "parentVocId"}},
+         {"terms": {"targetStationId": [ ...2단계의 station.id 전체... ]}}
+       ],
+       "must_not": [{"terms": {"status": [ ...1단계에서 읽은 completed_statuses... ]}}]
+     }}
+   각 히트에서 6개 필드만 추린다: id, parentVocId, createdAt, status,
+   targetStationId, targetStationName.
+   응답의 total과 실제로 옮긴 건수를 비교한다. 다르면 잘린 것이므로 게시하지 말고 보고.
+
+4. 직전 구간 결정
+   기본은 직전 영업일 09:00 KST ~ 오늘 09:00 KST. 영업일은 주말만 제외(공휴일은 영업일로 취급).
+   flingbiz_runs.jsonl 마지막 dry_run:false 줄의 asof가 직전 영업일보다 이전이면
+   (= 실행이 밀렸으면) 구간 시작을 그 asof로 넓히고 prev_label에 실제 구간을 쓴다.
+   KST 09:00 = 같은 날 UTC 00:00 이므로 범위 문자열은 날짜만 갈아끼운다.
+
+5. 직전 구간 신규/완료 (aggregate_documents, size 0, 2회)
+   - 신규: filter [{"exists": {"field": "parentVocId"}},
+                  {"range": {"createdAt": {"gte": "<구간시작일> 00:00:00", "lt": "<오늘> 00:00:00"}}},
+                  {"terms": {"targetStationId": [ ...전체... ]}}]
+   - 완료: 위와 동일하되 range 를 completedAt 으로 바꾼다
+   - aggs: {"st": {"terms": {"field": "targetStationId", "size": 300}}}
+   버킷을 {"targetStationId": <key>, "count": <doc_count>} 형태로 옮긴다.
+
+   위 결과를 작업 폴더의 es_input.json 으로 덮어쓴다. 필드는
+   generated_at / asof_kst / prev_day / prev_label / query_owners /
+   query_completed_statuses / owners / open_tickets / prev_new / prev_done.
+   ES 문자열은 가공하지 말고 원본 그대로 넣는다.
 6. 실행 (스케줄 실행은 cwd가 보장되지 않으니 반드시 절대경로):
    - Windows: py -3 -X utf8 "<폴더 절대경로>\flingbiz_daily.py" --input "<폴더 절대경로>\es_input.json"
    - mac/Linux: python3 "<폴더 절대경로>/flingbiz_daily.py" --input "<폴더 절대경로>/es_input.json"
