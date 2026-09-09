@@ -45,13 +45,50 @@ n8n Schedule (10분/평일)  ──POST──▶  GitHub API workflow_dispatch
 
 > 토큰 입력은 사람이 직접 한다(에이전트가 대신 넣지 않음).
 
+## 인스턴스·워크플로우 좌표 (찾는 데 시간 쓰지 말 것)
+
+| 항목 | 값 |
+|---|---|
+| n8n 인스턴스 | `https://n8n.pluglink.kr` |
+| 워크플로우 | `VOC 티켓 알림 트리거 (→GitHub Actions)` — ID **`bgVDfgZcJvaB86GW`** |
+| 직접 열기 | `https://n8n.pluglink.kr/workflow/bgVDfgZcJvaB86GW` |
+| notify 트리거 노드 | `data-id="voc-sched-notify"` (표시 이름은 아래 주의 참조) |
+| 상태 확인 (브라우저 콘솔) | `fetch('/rest/workflows/bgVDfgZcJvaB86GW', {credentials:'include', headers:{'browser-id':localStorage.getItem('n8n-browserId')}}).then(r=>r.json())` |
+
+> ⚠️ **노드 표시 이름이 낡았습니다.** notify 트리거의 라벨은 여전히 `10분마다 (평일 09-17 KST)`인데
+> 실제 cron은 `*/10 * * * *`(24시간)입니다. 캔버스 애니메이션 때문에 자동 리네임이 실패해 미룬 것이며,
+> **판단 기준은 라벨이 아니라 노드 파라미터의 cron 값**입니다. 손볼 기회가 있으면 라벨도 고칠 것.
+
+> ⚠️ **UI 조작 함정**: 이 n8n은 draft/publish 모델이고, Playwright의 일반 click은 캔버스 안정성 검사에서
+> 타임아웃납니다. 버튼은 JS로 눌러야 합니다 —
+> `document.querySelector('[data-test-id="workflow-open-publish-modal-button"]').click()` →
+> 버전 이름 입력 → `[data-test-id="workflow-publish-button"]`. REST 조회에는 `browser-id` 헤더가 필요합니다.
+
+## 스크립트 쪽 업무시간 게이트 (n8n 주기와 별개 — 혼동 주의)
+
+n8n을 24시간으로 돌려도 **신규 배분 알림은 여전히 09:00~18:00에만 즉시 발송**됩니다.
+`ticket_notifier.py`의 `is_business_hours()`(9 ≤ hour < 18)가 그 게이트이고, 코드 전체에서 **813행 한 곳**에서만 쓰입니다.
+
+| 알림 종류 | 업무시간 게이트 | 24시간화 효과 |
+|---|---|---|
+| **완료·취소 알림** | **없음** | ✅ 시각 무관 10분 내 발송 — 위 3시간 지연 사례가 해소되는 지점 |
+| **신규 배분 알림** | 있음 (09~18시) | ❌ 변화 없음. 그 밖 시간은 `overnight_queue`에 적재 → 다음 in-hours 실행(09시)에 발송 |
+
+`is_business_hours()`는 **요일을 보지 않습니다.** 따라서 24시간·전요일로 바꾼 뒤부터는
+**주말 09:00~18:00 배분 건이 즉시 발송**됩니다(이전에는 n8n·cron 모두 평일만이라 월요일까지 대기).
+야간 신규 배분까지 즉시 알리려면 `is_business_hours()` 자체를 손봐야 하며, 이는 코드 변경 사안입니다.
+
 ## n8n 워크플로우 구성 (노드 4개)
 
 ### A. 신규 알림 트리거 (10분 주기)
 
 **① Schedule Trigger**
 - Trigger Interval: **Custom (Cron)**
-- Expression: `*/10 9-17 * * 1-5`  ← n8n 인스턴스 TZ가 **Asia/Seoul**일 때 (KST 09:00~17:50)
+- Expression: `*/10 * * * *`  ← **2026-09-09 변경: 시간·요일 제한 해제(24시간 10분 주기)**
+  - 변경 전: `*/10 9-17 * * 1-5` (KST 09:00~17:50, 평일). n8n 인스턴스 TZ는 Asia/Seoul
+  - 변경 이유: 티켓 #641845가 18:02에 취소 처리됐는데 알림이 **21:13에 나갔다**(3시간 11분 지연).
+    17:50이 그날 마지막 디스패치라 그 뒤 처리분을 볼 폴링이 없었고, 밀린 GitHub cron이
+    21:13에 뒤늦게 터지면서 그때 감지된 것
   - 인스턴스가 UTC면 `*/10 0-8 * * 1-5`
 
 **② HTTP Request**
