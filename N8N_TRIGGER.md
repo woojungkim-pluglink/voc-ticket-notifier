@@ -56,7 +56,11 @@ n8n Schedule (10분/평일)  ──POST──▶  GitHub API workflow_dispatch
 | 상태 확인 (브라우저 콘솔) | `fetch('/rest/workflows/bgVDfgZcJvaB86GW', {credentials:'include', headers:{'browser-id':localStorage.getItem('n8n-browserId')}}).then(r=>r.json())` |
 
 > ⚠️ **노드 표시 이름이 낡았습니다.** notify 트리거의 라벨은 여전히 `10분마다 (평일 09-17 KST)`인데
-> 실제 cron은 `*/10 * * * *`(24시간)입니다. 캔버스 애니메이션 때문에 자동 리네임이 실패해 미룬 것이며,
+> 실제 cron은 `*/10 * * * *`(24시간)입니다. 자동 리네임을 두 번 시도했으나 실패했습니다 — NDV의 `inline-edit-input`에
+> 값을 넣으면 브라우저 탭 제목까지 바뀌지만 **발행 모달을 거치지 않으면 서버에 반영되지 않고**,
+> NDV를 닫는 순간 되돌아갑니다. (F2는 JS로 노드를 선택한 상태에서 무동작, Playwright의
+> click/dblclick은 캔버스 안정성 검사에서 타임아웃.) **사람이 화면에서 노드 선택 → F2**가 가장 빠릅니다.
+> 기능에는 영향이 없으며,
 > **판단 기준은 라벨이 아니라 노드 파라미터의 cron 값**입니다. 손볼 기회가 있으면 라벨도 고칠 것.
 
 > ⚠️ **UI 조작 함정**: 이 n8n은 draft/publish 모델이고, Playwright의 일반 click은 캔버스 안정성 검사에서
