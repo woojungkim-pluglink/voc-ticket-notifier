@@ -1,3 +1,38 @@
+> # ⚠️ 현재 운영 상태 (2026-09-17) — 이 문서보다 우선
+>
+> **VOC 알림은 지금 GitHub Actions가 아니라 로컬 Windows 작업으로 돌고 있습니다.**
+>
+> | 구성요소 | 상태 |
+> |---|---|
+> | 로컬 `Pluglink_VOC_Notify` / `_Summary` | **Enabled** — 평일 09:00부터 5분 주기·9시간(→17:55), summary 09:00 |
+> | GitHub 워크플로우 `voc-tickets.yml` | **disabled_manually** |
+> | n8n 트리거 `bgVDfgZcJvaB86GW` | 여전히 active(10분마다 dispatch 시도) — 워크플로우가 비활성이라 무효 |
+>
+> ## 왜 이렇게 됐나
+>
+> 2026-09-09에 n8n 트리거를 업무시간(54회/일)에서 24시간(144회/일)으로 넓힌 뒤
+> **GitHub Actions 무료 한도(2,000분/월, 계정 전체 공유)가 8일 만에 소진**됐다.
+>
+> - 09-15 19:31 KST "90% 사용" 메일 → 09-16 14:11 "100% 사용" → 09-16 14:20 첫 실패
+> - 실패 사유: `The job was not started because recent account payments have failed or your spending limit needs to be increased`
+> - 같은 계정의 **service-init-audit·charge-test-autofill 도 동시에 중단**됨(한도는 리포별이 아니라 계정 단위)
+> - VOC 알림 공백: 09-16 14:20 ~ 09-17 09:00 (약 18시간). 이 구간 실제 누락 배분은 **#645428 1건**
+>
+> ## 로컬 복구 시 반드시 한 일 (다음에도 동일)
+>
+> 로컬 `ticket_state.json`이 **2026-07-14에 멈춰 있어** 그대로 켜면 9월 티켓이 신규로 잡힌다.
+> 켜기 전 상태를 '현재'로 봉합했다 — 스냅샷에 184건 흡수, 스테일 완료대기 12건 종결,
+> 장애 시작(09-16 14:20) 이후 접수분만 알림 대상으로 남김. 백업 `ticket_state.json.bak-20260917`.
+>
+> ## 되돌릴 때 순서 (중복 발송 방지)
+>
+> 1. 로컬 작업 **먼저** 비활성화 (`Disable-ScheduledTask -TaskName Pluglink_VOC_*`)
+> 2. GitHub 워크플로우 활성화 (`gh api -X PUT repos/woojungkim-pluglink/voc-ticket-notifier/actions/workflows/voc-tickets.yml/enable`)
+> 3. n8n 주기를 업무시간(`*/10 9-17 * * 1-5`)으로 되돌릴지 결정 — 24시간 유지 시 한도 재소진
+> 4. Actions 캐시 상태와 로컬 상태가 다르므로, 전환 직후 한 번은 중복/누락을 눈으로 확인
+>
+> 무료 한도는 다음 청구주기(통상 매월 1일)에 리셋된다.
+
 # VOC 티켓 알림 — GitHub Actions 이전 가이드
 
 로컬 개인 PC(Task Scheduler → WSL) 방식을 GitHub Actions cron으로 이전한다. `charge-test-autofill`과 동일한 조직 패턴을 따른다.
