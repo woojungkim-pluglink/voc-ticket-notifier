@@ -49,9 +49,14 @@
 > ## 되돌릴 때 순서 (중복 발송 방지)
 >
 > 1. 로컬 작업 **먼저** 비활성화 (`Disable-ScheduledTask -TaskName Pluglink_VOC_*`)
-> 2. GitHub 워크플로우 활성화 (`gh api -X PUT repos/woojungkim-pluglink/voc-ticket-notifier/actions/workflows/voc-tickets.yml/enable`)
-> 3. n8n 주기를 업무시간(`*/10 9-17 * * 1-5`)으로 되돌릴지 결정 — 24시간 유지 시 한도 재소진
-> 4. Actions 캐시 상태와 로컬 상태가 다르므로, 전환 직후 한 번은 중복/누락을 눈으로 확인
+> 2. **Actions 캐시 전부 삭제** — 캐시에 2026-09-16 시점 상태가 남아 있어, 그대로 켜면
+>    그 사이 배분된 RECEIVED 티켓이 전부 '신규'로 잡혀 중복 발송된다(2026-09-17 로컬 복구 때 실측: 7건 중 6건이 중복).
+>    캐시를 비우면 첫 실행이 스냅샷 초기화로 끝나 **알림 0건**, 그다음 실행부터 정상 감지된다.
+>    `gh api "repos/OWNER/REPO/actions/caches" --jq '.actions_caches[].id' | xargs -I{} gh api -X DELETE "repos/OWNER/REPO/actions/caches/{}"`
+>    (대가: `ticket_ts_map` 이 비어 전환 이전에 알림된 티켓의 완료 스레드 댓글은 달리지 않는다 — 수용 가능)
+> 3. GitHub 워크플로우 활성화 (`gh api -X PUT repos/woojungkim-pluglink/voc-ticket-notifier/actions/workflows/voc-tickets.yml/enable`)
+> 4. n8n 주기를 업무시간(`*/10 9-17 * * 1-5`)으로 되돌릴지 결정 — 24시간 유지 시 한도 재소진
+> 5. 전환 직후 한 번은 중복/누락을 눈으로 확인
 >
 > 무료 한도는 다음 청구주기(통상 매월 1일)에 리셋된다.
 
