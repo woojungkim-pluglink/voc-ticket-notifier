@@ -780,7 +780,7 @@ def main():
                     print(f"  -> 티켓 #{tid} 이미 처리됨 ({ticket.get('status')}) — 스킵")
                     continue
                 assignee = ticket.get("assignedAdminUserName", "?")
-                print(f"  -> 야간 대기 티켓 #{tid} ({assignee})")
+                print(f"  -> 야간 대기 티켓 #{tid}")
                 result = send_slack_notification(ticket)
                 if result and isinstance(result, str):
                     ticket_ts_map[str(tid)] = result  # bot 발송 성공(ts 확보)
@@ -820,7 +820,10 @@ def main():
         str_tid = str(tid)
         assignee = ticket.get("assignedAdminUserName", "?")
         station = ticket.get("targetStationName", "?")
-        print(f"  -> 티켓 #{tid} ({assignee}, {station})")
+        # 로그 비식별: Actions 로그는 리포가 public 이면 전부 공개된다.
+        # 담당자 실명·고객 사업장명은 stdout 에 남기지 않는다(티켓 ID로 커넥트에서 조회 가능).
+        # Slack 알림 본문은 종전과 동일 — 발송 내용에는 영향 없음.
+        print(f"  -> 티켓 #{tid}")
 
         if in_hours:
             # 업무시간(9~18시): 즉시 발송
