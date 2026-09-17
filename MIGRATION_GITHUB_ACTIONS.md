@@ -5,7 +5,9 @@
 > | 구성요소 | 상태 |
 > |---|---|
 > | 로컬 `Pluglink_VOC_Notify` / `_Summary` | **Enabled** — 평일 09:00부터 5분 주기·9시간(→17:55), summary 09:00 |
-> | GitHub 워크플로우 `voc-tickets.yml` | **disabled_manually** |
+> | GitHub 워크플로우 `voc-tickets.yml` | **disabled_manually** (10/1 전환 시 활성화) |
+> | 리포 공개 범위 | **public** (2026-09-17 전환) — public 리포는 Actions 무제한 무료 |
+> | 과거 실행 이력 | **1,548건 전부 삭제** (전환 전, 마스킹 이전 로그에 실명·사업장명이 있었음) |
 > | n8n 트리거 `bgVDfgZcJvaB86GW` | 여전히 active(10분마다 dispatch 시도) — 워크플로우가 비활성이라 무효 |
 >
 > ## 왜 이렇게 됐나
@@ -23,6 +25,26 @@
 > 로컬 `ticket_state.json`이 **2026-07-14에 멈춰 있어** 그대로 켜면 9월 티켓이 신규로 잡힌다.
 > 켜기 전 상태를 '현재'로 봉합했다 — 스냅샷에 184건 흡수, 스테일 완료대기 12건 종결,
 > 장애 시작(09-16 14:20) 이후 접수분만 알림 대상으로 남김. 백업 `ticket_state.json.bak-20260917`.
+>
+> ## public 전환으로 확인된 것 (2026-09-17 실측)
+>
+> - **결제 차단 상태에서도 public 리포의 Actions 는 정상 실행된다.** 워크플로우를 임시 활성화해
+>   `dry_run=true` 로 디스패치한 결과 `conclusion=success` (run 35189608143, 이후 삭제).
+>   즉 10/1 을 기다리지 않아도 VOC 는 언제든 GitHub 에서 돌릴 수 있다 — 남은 제약은 로컬과의 중복뿐.
+> - private 리포인 `service-init-audit`·`charge-test-autofill` 은 **여전히 차단 상태**다.
+>   계정 한도 리셋(10/1) 또는 지출한도 상향이 있어야 재개된다.
+> - public 이므로 **60분 주기는 비용 목적이 아니라 소음 감소 목적**이 됐다. n8n 이 10분인 채여도 한도에는 무해하다.
+>
+> ## 로그 비식별 (public 이므로 필수)
+>
+> | 대상 | 조치 |
+> |---|---|
+> | 신규 배분·야간 대기 print | 담당자 실명·충전소명 제거, 티켓 ID만 |
+> | dry-run 의 Slack/webhook 본문 덤프 | 기본 미출력. 로컬 확인은 `VOC_LOG_BODY=1` |
+> | 일반(비 dry-run) 모드 | 본문 미출력 — 확인 완료 |
+>
+> ⚠️ 새 print 를 추가할 때 **담당자명·충전소명·Slack member ID·티켓 본문을 stdout 에 넣지 말 것.**
+> 이 리포의 Actions 로그는 전 세계에 공개된다.
 >
 > ## 되돌릴 때 순서 (중복 발송 방지)
 >

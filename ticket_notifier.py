@@ -185,7 +185,13 @@ def slack_api_call(method, payload):
     """Slack Web API 호출 (Bot Token 필요)"""
     if DRY_RUN:
         preview = json.dumps(payload, ensure_ascii=False)
-        print(f"  [DRY-RUN] slack {method}: {preview[:400]}")
+        # 공개 로그 보호: 리포가 public 이면 Actions 로그가 전부 공개된다.
+        # 본문에는 채널 ID·담당자 member ID·처리시각이 들어가므로 기본은 미출력.
+        # 로컬 디버깅에서 본문을 보려면 VOC_LOG_BODY=1 로 실행한다.
+        if os.environ.get("VOC_LOG_BODY") == "1":
+            print(f"  [DRY-RUN] slack {method}: {preview[:400]}")
+        else:
+            print(f"  [DRY-RUN] slack {method} — 본문 미출력(VOC_LOG_BODY=1 로 확인)")
         return {"ok": True, "ts": "DRYRUN"}
     url = f"https://slack.com/api/{method}"
     body = json.dumps(payload).encode("utf-8")
@@ -254,7 +260,10 @@ def send_message_with_bot(blocks, thread_ts=None):
 def send_message_with_webhook(payload):
     """Incoming Webhook으로 메시지 전송 (ts 반환 불가)"""
     if DRY_RUN:
-        print(f"  [DRY-RUN] webhook: {json.dumps(payload, ensure_ascii=False)[:400]}")
+        if os.environ.get("VOC_LOG_BODY") == "1":
+            print(f"  [DRY-RUN] webhook: {json.dumps(payload, ensure_ascii=False)[:400]}")
+        else:
+            print("  [DRY-RUN] webhook — 본문 미출력(VOC_LOG_BODY=1 로 확인)")
         return True
     if not SLACK_WEBHOOK_URL:
         return False
