@@ -7,7 +7,7 @@
 > | GitHub 워크플로우 `voc-tickets.yml` | **active** |
 > | 리포 공개 범위 | **public** — Actions 무제한 무료. 결제 차단 중에도 실행됨(실측) |
 > | n8n 트리거 `bgVDfgZcJvaB86GW` | active, **평일 업무시간 10분**(`*/10 9-17 * * 1-5`) — 2026-10-15 개발팀 합의 |
-> | 워크플로우 내장 cron | `*/10 0-8 * * 1-5`(UTC = KST 평일 09:00~17:50) — n8n 정지 대비 폴백 |
+> | 워크플로우 내장 cron | `*/10 0-8 * * 1-5`(UTC = KST 평일 09:00~17:50) — **notify 폴백만**. summary 예약은 2026-10-15 제거(지연 발화로 오후 중복 게시) → 요약은 n8n 09:00 단독 |
 > | 로컬 `Pluglink_VOC_Notify`/`_Summary` | **Disabled** (폴백으로 보존. 되살릴 때는 state 봉합 필수 — 아래) |
 > | 과거 실행 이력·캐시 | 전량 삭제(1,548 runs / 865 caches) — public 전환 전 정리 |
 > | private 자동화 2종 | `service-init-audit`·`charge-test-autofill` 은 **여전히 차단**. 10/1 한도 리셋 대기 |

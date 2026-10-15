@@ -13,8 +13,11 @@ on:
     #   (2026-09-09~10-15 은 24시간이었고, 하루 약 150회·약 9,000 API 호출이 발생했다.)
     #   야간·주말 실행을 늘리려면 개발팀과 먼저 협의할 것 — 이 봇은 실서비스와 같은 서버를 쓴다.
     - cron: '*/10 0-8 * * 1-5'
-    # summary: KST 평일 09:00 (= UTC 00:00).
-    - cron: '0 0 * * 1-5'
+    # summary 예약은 2026-10-15 제거했다. 요약은 n8n 09:00 workflow_dispatch(mode=summary)로만 보낸다.
+    #   제거 이유: 내장 summary cron('0 0 * * 1-5')을 GitHub 이 4~6시간 늦게 발화시켜 13~15시에
+    #   요약이 한 번 더 게시됐다(10/5~10/14 평일 8일 전부 확인). notify 는 상태로 중복을 막지만
+    #   summary 는 보낸 기록 없이 매번 게시하는 구조라 폴백으로 남겨 두면 안 된다.
+    #   대가: n8n 이 멈춘 날은 요약이 나가지 않는다. 날짜 가드('오늘 이미 보냈으면 생략')를 넣으면 폴백 복원 가능.
   workflow_dispatch:
     inputs:
       mode:
@@ -74,7 +77,9 @@ jobs:
             MODE="${{ github.event.inputs.mode }}"
             DRY="${{ github.event.inputs.dry_run }}"
           elif [ "${{ github.event.schedule }}" = "0 0 * * 1-5" ]; then
-            MODE="summary"
+            # 제거된 summary 예약의 잔여 발화(GitHub 이 이미 대기열에 넣은 지연 실행)가 와도
+            # 요약을 다시 게시하지 않도록 notify 로 돌린다. notify 는 상태 기반이라 중복이 없다.
+            MODE="notify"
             DRY="false"
           else
             MODE="notify"
