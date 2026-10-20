@@ -16,6 +16,29 @@ from datetime import datetime, timezone, timedelta
 # E4: --dry-run — Slack 발송·상태 저장을 하지 않고 무엇을 보낼지 출력만 한다(매핑·포맷 안전 검증용).
 DRY_RUN = "--dry-run" in sys.argv
 
+# 앱 수준 오류 집계 — 상태는 정상 저장한 뒤 종료코드 2로 끝내 워크플로우의 '실패 경보' 스텝이 울리게 한다.
+# (2026-10-20 기능점검: 요약 발송 실패·조회 오류·Slack 전송 실패가 모두 exit 0 이라 경보가 구조적으로 안 울렸다.)
+# Actions 로그는 공개된다 — 여기 넣는 문구에 담당자명·충전소명·본문을 넣지 말 것(분류명만).
+APP_ERRORS = []
+# summary 실행에서 요약이 게시됐는지. 집계 일부 오류로 exit 2 가 나도 요약은 이미 나갔을 수 있다 —
+# 그때 Re-run 하면 요약이 두 번 게시되므로 로그에 경고를 남긴다(요약에는 '보낸 기록' 가드가 없다).
+SUMMARY_POSTED = False
+
+def record_error(kind):
+    APP_ERRORS.append(kind)
+
+def exit_on_app_errors():
+    """상태 저장이 끝난 뒤 호출한다. 오류가 있었으면 exit 2.
+    notify 쪽 발송 실패는 다음 실행이 상태(retry_ids·ts_map)로 다시 시도한다. summary 는 재시도 경로가 없다."""
+    if not APP_ERRORS:
+        return
+    print(f"\n[FAIL] 앱 오류 {len(APP_ERRORS)}건 — 상태 저장 후 실패로 종료(실패 경보용)")
+    for kind in sorted(set(APP_ERRORS)):
+        print(f"  - {kind} x{APP_ERRORS.count(kind)}")
+    if SUMMARY_POSTED:
+        print("  ※ 일일 요약은 이미 게시됐다(집계 일부 누락 가능). 이 실행을 Re-run 하면 요약이 중복 게시된다.")
+    sys.exit(2)
+
 # ──────────────────────────────────────────────
 # 설정
 # ──────────────────────────────────────────────
@@ -49,16 +72,16 @@ SLACK_CHANNEL_ID = _config.get("slack_channel_id", "")
 # 닉네임 → Slack 멤버 ID 매핑 (ticket_config.json에서 로드)
 SLACK_MEMBER_IDS = _config.get("slack_member_ids", {})
 
-# 알림 대상 직원 닉네임
+# 알림 대상 직원 닉네임 (커넥트 assignedAdminUserName 검색어). 공개 리포이므로 실명은 적지 않는다.
 TARGET_EMPLOYEES = [
-    "엔젤",   # 정해성(엔젤) - 영업관리팀
-    "마크",   # 신동진(마크) - 영업관리팀
-    "우성",   # 장순재(우성) - 영업관리팀
-    "쿠이",   # 김우중(쿠이) - 시공관리팀
-    "엘리",   # 허은실(엘리) - 시공관리팀
-    "케이시", # 김충근(케이시) - 시공관리팀
-    "윤택",   # 김택윤(윤택) - 시공관리팀
-    "체셔",   # 양대열(체셔) - 시공관리팀
+    "엔젤",   # 영업관리팀
+    "마크",   # 영업관리팀
+    "우성",   # 영업관리팀
+    "쿠이",   # 시공관리팀
+    "엘리",   # 시공관리팀
+    "케이시", # 시공관리팀
+    "윤택",   # 시공관리팀
+    "체셔",   # 시공관리팀
 ]
 
 # 완료(종결)로 간주하는 상태. 중간 상태(PROCESSING/MONITORING)는 여기에 없어야 완료 오판을 막는다.
@@ -174,7 +197,16 @@ def get_ticket_by_id(jwt_token, ticket_id):
     try:
         result = api_request(url, headers={"Authorization": f"Bearer {jwt_token}"})
         return result.get("data")
-    except Exception:
+    except Exception as e:
+        # 404(삭제된 티켓)는 재시도해도 같으므로 경고만 남긴다. 그 외(5xx·타임아웃 등)는 오류로 집계.
+        # 응답 본문은 출력하지 않는다(공개 로그).
+        code = str(e)[:8]
+        if code == "HTTP 404":
+            print(f"  [WARN] 티켓 #{ticket_id} 상세 조회 HTTP 404")
+        else:
+            reason = code if code.startswith("HTTP") else type(e).__name__
+            print(f"  [ERROR] 티켓 #{ticket_id} 상세 조회 실패 ({reason})")
+            record_error("티켓 상세 조회 실패")
         return None
 
 # ──────────────────────────────────────────────
@@ -255,6 +287,7 @@ def send_message_with_bot(blocks, thread_ts=None):
         return result.get("ts")
     else:
         print(f"  [ERROR] Bot 메시지 전송 실패: {result.get('error')}")
+        record_error("Slack Bot 전송 실패")
         return None
 
 def send_message_with_webhook(payload):
@@ -425,12 +458,14 @@ def check_and_notify_completions(jwt_token, state):
             else:
                 err = result.get("error")
                 print(f"     스레드 발송 실패: {err}")
+                record_error("완료 스레드 발송 실패")
                 # C6: 설정성 오류(채널 미초대 등)는 재시도해도 무의미 — completed 처리해 무한 재조회 방지
                 if err in ("not_in_channel", "channel_not_found", "is_archived"):
                     print(f"     [WARN] 봇이 채널에 없음/아카이브 — 재시도 중단 위해 완료 처리. 봇 채널 초대 필요.")
                     completed_ids.add(str(ticket_id))
         except Exception as e:
             print(f"  [{ticket_id}] 완료 확인 오류: {e}")
+            record_error("완료 확인 오류")
 
     state["completed_ids"] = list(completed_ids)[-1000:]
     print(f"완료 처리: {newly_completed}건 스레드 발송")
@@ -461,6 +496,7 @@ def get_tickets_paged(jwt_token, nickname, status=None, max_pages=20):
                 break
         except Exception as e:
             print(f"  [{nickname}] 페이지 {page} 오류: {e}")
+            record_error("목록 페이지 조회 오류")
             break
     return all_tickets
 
@@ -490,6 +526,7 @@ def get_daily_delta(jwt_token, target_date):
                     break
             except Exception as e:
                 print(f"  [{nickname}] 신규 집계 오류: {e}")
+                record_error("요약 신규 집계 오류")
                 break
 
         # 처리 완료: 대상일에 종료된 티켓 목록.
@@ -508,6 +545,7 @@ def get_daily_delta(jwt_token, target_date):
                         seen_done.add(tid)
             except Exception as e:
                 print(f"  [{nickname}] 완료 집계 오류({done_status}): {e}")
+                record_error("요약 완료 집계 오류")
 
         results[nickname] = {"new": new_tickets, "completed": completed_tickets}
         print(f"  [{nickname}] 신규={len(new_tickets)}건, 완료={len(completed_tickets)}건")
@@ -545,6 +583,7 @@ def get_remaining_tickets_by_team(jwt_token, teams):
                 team_tickets.extend(tickets)
             except Exception as e:
                 print(f"  [{nickname}] 잔여 티켓 조회 오류: {e}")
+                record_error("요약 잔여 조회 오류")
         result[team] = team_tickets
         print(f"  [{team}] 잔여 티켓 {len(team_tickets)}건")
     return result
@@ -654,15 +693,19 @@ def send_daily_summary(jwt_token):
         ]
     })
 
+    global SUMMARY_POSTED
     if SLACK_BOT_TOKEN:
         ts = send_message_with_bot(blocks)
         if ts:
+            SUMMARY_POSTED = True
             print(f"일일 요약 발송 완료 (bot, ts={ts})")
             return
     if send_message_with_webhook({"blocks": blocks}):
+        SUMMARY_POSTED = True
         print("일일 요약 발송 완료 (webhook)")
     else:
         print("[ERROR] 일일 요약 발송 실패")
+        record_error("일일 요약 발송 실패")
 
 # ──────────────────────────────────────────────
 # 신규 티켓 감지 (스냅샷 기반)
@@ -694,6 +737,7 @@ def find_new_tickets(jwt_token, state):
                     break
         except Exception as e:
             print(f"  [{nickname}] 조회 오류: {e}")
+            record_error("신규감지 조회 오류")
             continue
 
         initialized = nickname in employee_snapshot
@@ -702,8 +746,11 @@ def find_new_tickets(jwt_token, state):
         # C3: 이미 초기화된 담당자인데 이번 조회가 0건이면 비정상(빈/오류 응답) 가능성이 높다.
         # 티켓은 삭제되지 않으므로 '있다가 0건'은 정상 상황이 아님 → 스냅샷을 덮어쓰지 않고 스킵해
         # 그 사이 배분된 티켓이 알림 없이 흡수되는 것을 막는다.
-        if initialized and not current_map:
+        # prev_ids 조건: '이전에도 0건 → 이번에도 0건'(아직 배분 이력이 없는 담당자)은 정상이므로 제외한다.
+        # (앱 오류로 집계되면 매 실행 실패 경보가 울리기 때문 — 2026-10-20 리뷰)
+        if initialized and prev_ids and not current_map:
             print(f"  [{nickname}] 조회 0건(이전 {len(prev_ids)}건) — 비정상 응답 가능성, 스냅샷 유지·스킵")
+            record_error("신규감지 0건 응답(비정상)")
             continue
 
         # D3: '초기화 여부'를 빈 리스트가 아니라 키 존재로 판정한다.
@@ -798,12 +845,14 @@ def main():
                 else:
                     still_pending.append(tid)  # 발송 실패 → 큐 유지, 다음 실행 재시도
                     print(f"  -> 티켓 #{tid} 발송 실패 — 대기열 유지(재시도 예정)")
+                    record_error("야간 대기 알림 발송 실패")
             if still_pending:
                 state["overnight_queue"] = still_pending
                 print(f"  야간 대기열 {len(still_pending)}건 재시도 대기")
             save_state(state)
 
         send_daily_summary(jwt_token)
+        exit_on_app_errors()
         return
 
     # 기본 모드: 신규 티켓 알림 + 완료 스레드 알림
@@ -848,6 +897,7 @@ def main():
                 retry_ids.add(str_tid)
                 failed_count += 1
                 print(f"     발송 실패 — 다음 실행에서 재시도 예정")
+                record_error("신규 알림 발송 실패(재시도 예정)")
         else:
             # 업무시간 외: 야간 대기열 저장 → 다음날 9시에 발송
             overnight_queue.append(tid)
@@ -859,6 +909,7 @@ def main():
     state["retry_ids"] = list(retry_ids)
     save_state(state)
     print(f"\n완료: 즉시 발송 {notified_count}건 / 야간 대기열 {queued_count}건 / 재시도 대기 {failed_count}건")
+    exit_on_app_errors()
 
 if __name__ == "__main__":
     main()

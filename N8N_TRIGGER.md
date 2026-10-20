@@ -1,6 +1,6 @@
 # n8n → GitHub Actions 트리거 (알림 주기 보장)
 
-> Actions **내장 cron이 실제로는 하루 3~4회만 실행**되는 것을 실측으로 확인했다. n8n Schedule이 10분마다 `workflow_dispatch`를 호출해 주기를 보장한다. **코드 변경은 없다.**
+> Actions **내장 cron이 실제로는 하루 3~4회만 실행**되는 것을 실측으로 확인했다. n8n Schedule이 10분마다 `workflow_dispatch`를 호출해 주기를 보장한다. (n8n 도입 자체에는 코드 변경이 없었다.)
 
 ## 왜 필요한가 (실측 근거, 2026-09)
 
@@ -27,7 +27,10 @@ n8n Schedule (10분/평일)  ──POST──▶  GitHub API workflow_dispatch
                                   (기존 그대로 — 상태 캐시·시크릿·경보 유지)
 ```
 
-- Actions 내장 cron은 **보조(fallback)로 남겨 둔다**. n8n이 죽어도 하루 몇 번은 돌고, 중복 실행은 `concurrency: voc-ticket-state`가 직렬화하므로 안전하다.
+- Actions 내장 cron은 **notify 보조(fallback)로만 남겨 둔다**. 중복 실행은 `concurrency: voc-ticket-state`가 직렬화하므로 안전하다.
+  - 폴백의 실제 힘은 약하다(2026-10-15~19 실측 **하루 0~3회**, 그중 절반이 18시 이후 지연 발화). n8n이 멈추면 SLA 20분은 지켜지지 않는다.
+  - 업무시간 밖에 늦게 도착한 schedule 실행은 yml 첫 스텝 **'업무시간 가드'가 생략**시킨다(2026-10-20, 개발팀 합의 범위 준수).
+  - 요약(summary)과 **야간 대기열 발송은 폴백이 없다** — 둘 다 n8n 09:00 summary 디스패치에서만 일어난다.
 
 ## 준비 (1회, 직접 수행 필요)
 
@@ -59,7 +62,8 @@ n8n Schedule (10분/평일)  ──POST──▶  GitHub API workflow_dispatch
 - 24시간 운영 시: 하루 약 150회 실행 × 1회당 API 약 60호출 = **약 9,000호출/일**, 티켓 약 57만 건 재다운로드
 - 업무시간 운영 시: 평일 54회, 주말 0회
 - 이 봇은 고객 앱·상담원 화면과 **같은 서버**를 쓴다. 주기를 늘릴 때는 **개발팀과 먼저 협의**한다
-- 받아들인 대가: 18:00 이후 처리된 완료·취소 알림은 다음 영업일 09:00 (또는 GitHub 내장 cron 이 우연히 돌 때) 발송된다.
+- 받아들인 대가: 18:00 이후 처리된 완료·취소 알림은 다음 영업일 09:00 에 발송된다
+  (2026-10-20 부터 업무시간 밖 지연 cron 은 가드가 생략시키므로 '우연히 저녁에 나가는' 경우도 없다).
   신규 배분 알림은 원래 스크립트가 업무시간에만 즉시 발송하므로 영향 없다
 
 > 2026-09-17 의 "1시간 주기로 바꿔야 한다" 지시는 **폐기**됐다. 리포를 public 으로 전환하면서 GitHub 비용 문제가 사라졌고,
@@ -70,7 +74,7 @@ n8n Schedule (10분/평일)  ──POST──▶  GitHub API workflow_dispatch
 | 항목 | 값 |
 |---|---|
 | n8n 인스턴스 | `https://n8n.pluglink.kr` |
-| 워크플로우 | `VOC 티켓 알림 트리거 (→GitHub Actions)` — ID **`bgVDfgZcJvaB86GW`** |
+| 워크플로우 | `VOC 티켓 알림 트리거 (→GitHub Actions)` — ID **`bgVDfgZcJvaB86GW`** (⚠️ 2026-10-20 기준 n8n 상 실제 이름은 `10분마다 (24시간·전요일)`로 잘못 바뀌어 있다 — 이름이 아니라 ID로 찾을 것) |
 | 직접 열기 | `https://n8n.pluglink.kr/workflow/bgVDfgZcJvaB86GW` |
 | notify 트리거 노드 | `data-id="voc-sched-notify"` (표시 이름은 아래 주의 참조) |
 | 상태 확인 (브라우저 콘솔) | `fetch('/rest/workflows/bgVDfgZcJvaB86GW', {credentials:'include', headers:{'browser-id':localStorage.getItem('n8n-browserId')}}).then(r=>r.json())` |
@@ -86,15 +90,15 @@ n8n Schedule (10분/평일)  ──POST──▶  GitHub API workflow_dispatch
 ## 스크립트 쪽 업무시간 게이트 (n8n 주기와 별개 — 혼동 주의)
 
 n8n을 24시간으로 돌려도 **신규 배분 알림은 여전히 09:00~18:00에만 즉시 발송**됩니다.
-`ticket_notifier.py`의 `is_business_hours()`(9 ≤ hour < 18)가 그 게이트이고, 코드 전체에서 **813행 한 곳**에서만 쓰입니다.
+`ticket_notifier.py`의 `is_business_hours()`(9 ≤ hour < 18)가 그 게이트이고, 코드 전체에서 **한 곳(main 의 notify 분기)**에서만 쓰입니다.
 
-| 알림 종류 | 업무시간 게이트 | 24시간화 효과 |
+| 알림 종류 | 업무시간 게이트 | 비고 |
 |---|---|---|
-| **완료·취소 알림** | **없음** | ✅ 시각 무관 10분 내 발송 — 위 3시간 지연 사례가 해소되는 지점 |
-| **신규 배분 알림** | 있음 (09~18시) | ❌ 변화 없음. 그 밖 시간은 `overnight_queue`에 적재 → 다음 in-hours 실행(09시)에 발송 |
+| **완료·취소 알림** | **없음** | 실행만 되면 시각 무관 발송. 현재는 실행 자체가 평일 업무시간뿐이라 18시 이후 처리분은 다음 영업일 09시 |
+| **신규 배분 알림** | 있음 (09~18시) | 그 밖 시간에 감지되면 `overnight_queue`에 적재 → **다음 summary 실행(n8n 평일 09:00)에서만 발송**. notify 실행은 대기열을 비우지 않는다(2026-10-20 기능점검에서 코드로 확인 — 이전 서술 "다음 in-hours 실행"은 틀렸다). n8n 요약이 멈춘 날엔 대기열도 정체된다 |
 
-`is_business_hours()`는 **요일을 보지 않습니다.** 따라서 24시간·전요일로 바꾼 뒤부터는
-**주말 09:00~18:00 배분 건이 즉시 발송**됩니다(이전에는 n8n·cron 모두 평일만이라 월요일까지 대기).
+`is_business_hours()`는 **요일을 보지 않습니다.** 다만 현재는 n8n·폴백 모두 평일 업무시간에만 실행되므로,
+주말 배분 건은 월요일 09시 첫 실행에서 업무시간 내 감지로 **즉시 발송**됩니다(야간 대기열을 거치지 않음).
 야간 신규 배분까지 즉시 알리려면 `is_business_hours()` 자체를 손봐야 하며, 이는 코드 변경 사안입니다.
 
 ## n8n 워크플로우 구성 (노드 4개)
@@ -144,6 +148,9 @@ n8n을 24시간으로 돌려도 **신규 배분 알림은 여전히 09:00~18:00�
 
 ## 운영 메모
 
-- **PAT 만료 주의**: 만료되면 dispatch가 401로 실패하고, 알림은 Actions 내장 cron 수준(하루 3~4회)으로 조용히 떨어진다. n8n 실행 실패 알림(공용 에러 워크플로우)에 연결해 둘 것.
+- **PAT 만료 주의 — 현재 토큰 `n8n-voc-dispatch`(fine-grained) 만료 2026-12-06(일)**: 만료되면 dispatch가 401로 실패하고, 알림은 Actions 내장 cron 수준(하루 0~3회)으로 조용히 떨어지며 요약은 0회가 된다. **11/30 전에 재발급 → n8n 자격증명 `GitHub PAT — voc-ticket-notifier` 값 교체**(사람이 직접).
+- **실패 알림 미연결(2026-10-20 확인)**: 이 워크플로우의 `settings.errorWorkflow`가 비어 있다. 공용 에러 워크플로우 `lhe4NxJX2N2odbKA`(→ #쿠이슬랙비서)에 연결해야 401 등 dispatch 실패가 경보로 이어진다.
+- **public 리포 60일 무활동 자동 비활성**: 리포에 60일간 커밋이 없으면 GitHub가 schedule 이 있는 워크플로우를 **통째로** 비활성화한다(`disabled_inactivity`). 그러면 내장 cron 뿐 아니라 **n8n dispatch 도 거부돼 알림·요약이 전부 무음 중단**된다(추정 — dispatch 거부는 미검증).
+  마지막 커밋 2026-10-20 기준 **2026-12-19 전에 커밋 1건**(문서 갱신이라도)을 넣을 것. 이미 꺼졌다면 `gh workflow enable voc-tickets.yml -R woojungkim-pluglink/voc-ticket-notifier`.
 - 이 트리거가 도입되면 품질기준의 **SLA 배분 후 20분**(10분 주기 + 실행시간 ~1분)과 **요약 평일 09:00**이 실제로 달성 가능해진다.
-- 되돌리기: n8n 워크플로우 비활성화 → Actions 내장 cron만 남음(기존 상태).
+- 되돌리기: n8n 워크플로우 비활성화 → Actions 내장 cron 폴백만 남음(하루 0~3회 notify, **요약 0회·야간 대기열 정체**).

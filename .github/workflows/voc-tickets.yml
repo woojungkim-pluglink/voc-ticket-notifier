@@ -7,7 +7,9 @@ on:
   schedule:
     # notify 폴백: KST 평일 09:00~17:50 (= UTC 00:00~08:50).
     # 실제 알림 주기는 n8n 트리거(10분, 평일 업무시간)가 만든다 — N8N_TRIGGER.md.
-    # 이 내장 cron 은 n8n 정지 대비 폴백이며, GitHub 스케줄 특성상 실측 하루 3~4회만 실행된다.
+    # 이 내장 cron 은 n8n 정지 대비 폴백이며, GitHub 스케줄 특성상 실측 하루 0~3회만 실행된다
+    #   (n8n 이 멈추면 SLA 20분은 지켜지지 않는다 — 폴백은 '최소 생존'용).
+    #   늦게 발화해 업무시간 밖에 도착한 실행은 아래 '업무시간 가드' 스텝이 생략시킨다.
     #
     # 2026-10-15 개발팀장 합의: 회사 API(apis.pluglink.kr) 부하를 줄이기 위해 업무시간만 운영.
     #   (2026-09-09~10-15 은 24시간이었고, 하루 약 150회·약 9,000 API 호출이 발생했다.)
@@ -43,19 +45,44 @@ jobs:
   run:
     runs-on: ubuntu-latest
     steps:
+      # 업무시간 가드 (2026-10-20 추가). GitHub 은 내장 cron 을 수 시간 늦게 발화시킨다
+      # (10/15~10/19 실측: schedule 6회 중 3회가 18:04·20:39·22:13 KST).
+      # 개발팀 합의('평일 업무시간만 회사 API 호출')를 지키기 위해, schedule 이벤트가
+      # KST 평일 09~18시 밖에 도착하면 아무것도 하지 않고 성공으로 끝낸다.
+      # workflow_dispatch(n8n·수동)는 시간과 무관하게 실행한다.
+      - name: 업무시간 가드 (schedule 지연 발화 차단)
+        id: gate
+        run: |
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          DOW=$(TZ=KST-9 date +%u)    # 1=월 … 7=일
+          HOUR=$(TZ=KST-9 date +%-H)  # 0~23, 앞자리 0 없음
+          if [ "$DOW" -le 5 ] && [ "$HOUR" -ge 9 ] && [ "$HOUR" -lt 18 ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "KST $(TZ=KST-9 date '+%a %H:%M') — 업무시간 밖 지연 발화, 실행 생략"
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.gate.outputs.run == 'true'
 
       - uses: actions/setup-python@v5
+        if: steps.gate.outputs.run == 'true'
         with:
           python-version: '3.12'
         # 의존성 없음 — 표준 라이브러리(urllib)만 사용하므로 pip install 불필요.
 
       - name: CI용 설정 배치 (비-시크릿 채널·멤버 매핑)
+        if: steps.gate.outputs.run == 'true'
         run: cp ticket_config.ci.json ticket_config.json
 
       # 스냅샷 상태를 캐시로 영속(러너는 stateless). 롤링 캐시 패턴:
       # 항상 최신(voc-state-*)을 복원하고, 실행 후 run_id 키로 새 캐시를 저장.
       - name: Restore state
+        if: steps.gate.outputs.run == 'true'
         uses: actions/cache/restore@v4
         with:
           path: ticket_state.json
@@ -63,7 +90,10 @@ jobs:
           restore-keys: |
             voc-state-
 
+      # 앱 오류(요약 발송 실패·조회 오류·Slack 전송 실패 등)는 상태 저장 후 exit 2 로 끝난다
+      # → 아래 Save state(always)가 상태를 저장하고, '실패 경보' 스텝이 울린다.
       - name: Run notifier
+        if: steps.gate.outputs.run == 'true'
         id: run
         env:
           # 시크릿은 GitHub Actions Secrets에서만 주입 (코드는 env 폴백으로 읽음).
@@ -93,7 +123,7 @@ jobs:
           fi
 
       - name: Save state
-        if: always()
+        if: always() && steps.gate.outputs.run == 'true'
         uses: actions/cache/save@v4
         with:
           path: ticket_state.json
