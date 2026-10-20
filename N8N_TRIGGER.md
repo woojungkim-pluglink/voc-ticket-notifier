@@ -74,7 +74,7 @@ n8n Schedule (10분/평일)  ──POST──▶  GitHub API workflow_dispatch
 | 항목 | 값 |
 |---|---|
 | n8n 인스턴스 | `https://n8n.pluglink.kr` |
-| 워크플로우 | `VOC 티켓 알림 트리거 (→GitHub Actions)` — ID **`bgVDfgZcJvaB86GW`** (⚠️ 2026-10-20 기준 n8n 상 실제 이름은 `10분마다 (24시간·전요일)`로 잘못 바뀌어 있다 — 이름이 아니라 ID로 찾을 것) |
+| 워크플로우 | `VOC 티켓 알림 트리거 (→GitHub Actions)` — ID **`bgVDfgZcJvaB86GW`** (2026-09-09~10-20 사이 이름이 `10분마다 (24시간·전요일)`로 잘못 바뀌어 있었다 — 10-20 정정. 찾을 땐 ID 기준) |
 | 직접 열기 | `https://n8n.pluglink.kr/workflow/bgVDfgZcJvaB86GW` |
 | notify 트리거 노드 | `data-id="voc-sched-notify"` (표시 이름은 아래 주의 참조) |
 | 상태 확인 (브라우저 콘솔) | `fetch('/rest/workflows/bgVDfgZcJvaB86GW', {credentials:'include', headers:{'browser-id':localStorage.getItem('n8n-browserId')}}).then(r=>r.json())` |
@@ -149,7 +149,8 @@ n8n을 24시간으로 돌려도 **신규 배분 알림은 여전히 09:00~18:00�
 ## 운영 메모
 
 - **PAT 만료 주의 — 현재 토큰 `n8n-voc-dispatch`(fine-grained) 만료 2026-12-06(일)**: 만료되면 dispatch가 401로 실패하고, 알림은 Actions 내장 cron 수준(하루 0~3회)으로 조용히 떨어지며 요약은 0회가 된다. **11/30 전에 재발급 → n8n 자격증명 `GitHub PAT — voc-ticket-notifier` 값 교체**(사람이 직접).
-- **실패 알림 미연결(2026-10-20 확인)**: 이 워크플로우의 `settings.errorWorkflow`가 비어 있다. 공용 에러 워크플로우 `lhe4NxJX2N2odbKA`(→ #쿠이슬랙비서)에 연결해야 401 등 dispatch 실패가 경보로 이어진다.
+- **실패 알림 연결됨(2026-10-20)**: `settings.errorWorkflow` = 공용 에러 워크플로우 `lhe4NxJX2N2odbKA`(→ #쿠이슬랙비서). 401 등 dispatch 실패 시 '워크플로우: VOC 티켓 알림 트리거 (→GitHub Actions) / 실패 노드 / 에러' 형식으로 경보가 간다.
+  변경 방법: REST `PATCH /rest/workflows/{id}` 에 `{name, settings, versionId}` — 이름·설정은 버전 대상이 아니라 publish 없이 반영됐다(activeVersionId·노드 불변 확인). 실제 실패 상황으로 경보를 시험하지는 않았다.
 - **public 리포 60일 무활동 자동 비활성**: 리포에 60일간 커밋이 없으면 GitHub가 schedule 이 있는 워크플로우를 **통째로** 비활성화한다(`disabled_inactivity`). 그러면 내장 cron 뿐 아니라 **n8n dispatch 도 거부돼 알림·요약이 전부 무음 중단**된다(추정 — dispatch 거부는 미검증).
   마지막 커밋 2026-10-20 기준 **2026-12-19 전에 커밋 1건**(문서 갱신이라도)을 넣을 것. 이미 꺼졌다면 `gh workflow enable voc-tickets.yml -R woojungkim-pluglink/voc-ticket-notifier`.
 - 이 트리거가 도입되면 품질기준의 **SLA 배분 후 20분**(10분 주기 + 실행시간 ~1분)과 **요약 평일 09:00**이 실제로 달성 가능해진다.
